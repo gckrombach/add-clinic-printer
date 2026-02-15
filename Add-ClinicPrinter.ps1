@@ -7,7 +7,27 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$logDir = '\\your-fileserver\SharedTools\Add-ClinicPrinter'
+
+# Centralized defaults for easy adaptation in other environments.
+$Config = @{
+    LogDir               = '\\your-fileserver\SharedTools\Add-ClinicPrinter'    # update this
+    SmtpHost             = 'smtp.yourdomain.example'                            # update this
+    SmtpFallbackIp       = '10.0.0.25'                                          # update this (IP of your SMTPhost incase you can't resolve the hostname)
+    EmailFrom            = 'Add-ClinicPrinter@yourdomain.example'               # update this
+    EmailTo              = @('it-support@yourdomain.example')                   # update this
+    # Optional fallback order used only when -DriverName is not provided.
+    AutoDetectDriverCandidates = @(
+        'HP Universal Printing PCL 6 (v6.6.0)',
+        'HP Universal Printing PCL 6',
+        'Microsoft IPP Class Driver',
+        'Generic / Text Only'
+    )
+    PrinterPortTimeoutMs = 2000
+    SmtpConnectTimeoutMs = 3000
+    SmtpPort             = 25
+}
+
+$logDir = $Config.LogDir
 if (-not (Test-Path -Path $logDir)) {
     try {
         New-Item -Path $logDir -ItemType Directory -Force | Out-Null
@@ -66,7 +86,7 @@ function Test-TcpPort {
     param(
         [string]$ComputerName,
         [int]$Port,
-        [int]$TimeoutMs = 2000
+        [int]$TimeoutMs = $($Config.PrinterPortTimeoutMs)
     )
     # Use a short TCP connect to confirm the printer is reachable on the port.
     $client = New-Object System.Net.Sockets.TcpClient
@@ -125,7 +145,7 @@ function Get-AdUserEmail {
 function Test-SmtpReachable {
     param(
         [Parameter(Mandatory = $true)][string]$SmtpHost,
-        [int]$Port = 25
+        [int]$Port = $($Config.SmtpPort)
     )
 
     $SmtpHost = $SmtpHost.Trim().Split()[0]
@@ -160,7 +180,7 @@ function Test-SmtpReachable {
     try {
         $client = New-Object System.Net.Sockets.TcpClient
         $iar = $client.BeginConnect($SmtpHost, $Port, $null, $null)
-        $wait = $iar.AsyncWaitHandle.WaitOne(3000, $false)
+        $wait = $iar.AsyncWaitHandle.WaitOne($Config.SmtpConnectTimeoutMs, $false)
         if ($wait -and $client.Connected) {
             $client.EndConnect($iar)
             $result.CanConnect = $true
@@ -190,19 +210,19 @@ function Send-LogEmail {
         [string[]]$RunLines
     )
 
-    # Best-effort email using the same SMTP relay as EasyOne Health Checker.
-    $emailServer = "smtp.yourdomain.example"
-    $emailServerIp = "10.0.0.25"
-    $emailFrom = "Add-ClinicPrinter@yourdomain.example"
-    $emailTo = @("it-support@yourdomain.example")
+    # Best-effort email using the configured SMTP relay.
+    $emailServer = $Config.SmtpHost
+    $emailServerIp = $Config.SmtpFallbackIp
+    $emailFrom = $Config.EmailFrom
+    $emailTo = $Config.EmailTo
     $emailCc = @()
     if ($UserEmail) {
         $emailCc += $UserEmail
     }
 
-    $smtpStatus = Test-SmtpReachable -SmtpHost $emailServer -Port 25
+    $smtpStatus = Test-SmtpReachable -SmtpHost $emailServer -Port $Config.SmtpPort
     if (-not $smtpStatus.CanResolve -or -not $smtpStatus.CanConnect) {
-        $smtpStatus = Test-SmtpReachable -SmtpHost $emailServerIp -Port 25
+        $smtpStatus = Test-SmtpReachable -SmtpHost $emailServerIp -Port $Config.SmtpPort
         $emailServer = $emailServerIp
     }
 
@@ -346,15 +366,8 @@ try {
 
     if (-not $DriverName) {
         # Choose a reasonable default driver that is already installed.
-        $preferredDrivers = @(
-            'HP Universal Printing PCL 6 (v6.6.0)',
-            'HP Universal Printing PCL 6',
-            'Microsoft IPP Class Driver',
-            'Generic / Text Only'
-        )
-
         $installedDrivers = Get-PrinterDriver | Select-Object -ExpandProperty Name
-        $DriverName = $preferredDrivers | Where-Object { $installedDrivers -contains $_ } | Select-Object -First 1
+        $DriverName = $Config.AutoDetectDriverCandidates | Where-Object { $installedDrivers -contains $_ } | Select-Object -First 1
     }
 
     if (-not $DriverName) {

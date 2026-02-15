@@ -35,7 +35,7 @@ Usage
 - Optional: run Add-ClinicPrinter.ps1 with -PrinterIp, -PrinterName, -PrintTestPage, or -DriverName
 
 End-user run instructions (Outlook-safe)
-- Copy and paste this into the Windows search bar, then press Enter.
+- Copy and paste the path into the Windows search bar, then press Enter.
+- Double-click Add-ClinicPrinter.cmd.
 - When prompted, click Run.
-- Path (include quotes so Outlook does not auto-link):
-  "\\your-fileserver\SharedTools\Add-ClinicPrinter\Add-ClinicPrinter.cmd"
+- Path (link to the directory, not the .cmd file itself): \\your-fileserver\SharedTools\Add-ClinicPrinter\
